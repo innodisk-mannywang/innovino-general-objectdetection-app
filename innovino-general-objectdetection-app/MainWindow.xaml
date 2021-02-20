@@ -1,0 +1,58 @@
+﻿<Window x:Class="innovino_general_objectdetection_app.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:innovino_general_objectdetection_app"
+        mc:Ignorable="d"
+        Title="InnoVINO-General-ObjectDetection-App" Height="450" Width="800" ResizeMode="NoResize" Loaded="Window_Loaded">
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="25*"/>
+            <ColumnDefinition Width="75*"/>
+        </Grid.ColumnDefinitions>
+        <Grid Grid.Column="0">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="10*"/>
+                <RowDefinition Height="10*"/>
+                <RowDefinition Height="10*"/>
+                <RowDefinition Height="10*"/>
+                <RowDefinition Height="10*"/>
+                <RowDefinition Height="10*"/>
+                <RowDefinition Height="10*"/>
+                <RowDefinition Height="10*"/>
+                <RowDefinition Height="10*"/>
+                <RowDefinition Height="10*"/>
+            </Grid.RowDefinitions>
+            <Grid Grid.Row="0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="30*"/>
+                    <ColumnDefinition Width="70*"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="Device :" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                <ComboBox Grid.Column="1" x:Name="cb_device" SelectionChanged="Cb_omz_models_SelectionChanged" Margin="10"/>
+            </Grid>
+            <Grid Grid.Row="1">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="30*"/>
+                    <ColumnDefinition Width="70*"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="Model :" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                <ComboBox Grid.Column="1" x:Name="cb_omz_models" SelectionChanged="Cb_omz_models_SelectionChanged" Margin="10"/>
+            </Grid>
+            <Grid Grid.Row="2">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="30*"/>
+                    <ColumnDefinition Width="70*"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="Cof :" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                <Slider Grid.Column="1" x:Name="slider_threadshold" ValueChanged="Slider_threadshold_ValueChanged" VerticalAlignment="Center" Margin="10"/>
+            </Grid>
+
+        </Grid>
+        <Grid Grid.Column="1">
+            <Image x:Name="rawimage" Stretch="Fill"/>
+            <Canvas x:Name="canvas"/>
+        </Grid>
+    </Grid>
+</Window>
