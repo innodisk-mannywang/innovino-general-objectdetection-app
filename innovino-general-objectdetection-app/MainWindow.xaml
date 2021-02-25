@@ -5,24 +5,19 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:innovino_general_objectdetection_app"
         mc:Ignorable="d"
-        Title="InnoVINO-General-ObjectDetection-App" Height="450" Width="800" ResizeMode="NoResize" Loaded="Window_Loaded">
+        Title="InnoVINO-General-ObjectDetection-App" Height="450" Width="800" ResizeMode="NoResize" Loaded="Window_Loaded" Closed="Window_Closed">
     <Grid>
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="25*"/>
-            <ColumnDefinition Width="75*"/>
+            <ColumnDefinition Width="30*"/>
+            <ColumnDefinition Width="70*"/>
         </Grid.ColumnDefinitions>
         <Grid Grid.Column="0">
             <Grid.RowDefinitions>
                 <RowDefinition Height="10*"/>
                 <RowDefinition Height="10*"/>
                 <RowDefinition Height="10*"/>
-                <RowDefinition Height="10*"/>
-                <RowDefinition Height="10*"/>
-                <RowDefinition Height="10*"/>
-                <RowDefinition Height="10*"/>
-                <RowDefinition Height="10*"/>
-                <RowDefinition Height="10*"/>
-                <RowDefinition Height="10*"/>
+                <RowDefinition Height="70*"/>
+                <!--<RowDefinition Height="10*"/>-->
             </Grid.RowDefinitions>
             <Grid Grid.Row="0">
                 <Grid.ColumnDefinitions>
@@ -30,7 +25,7 @@
                     <ColumnDefinition Width="70*"/>
                 </Grid.ColumnDefinitions>
                 <TextBlock Grid.Column="0" Text="Device :" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                <ComboBox Grid.Column="1" x:Name="cb_device" SelectionChanged="Cb_omz_models_SelectionChanged" Margin="10"/>
+                <ComboBox Grid.Column="1" x:Name="cb_device" SelectionChanged="Cb_device_SelectionChanged"  Margin="10"/>
             </Grid>
             <Grid Grid.Row="1">
                 <Grid.ColumnDefinitions>
@@ -43,16 +38,45 @@
             <Grid Grid.Row="2">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="30*"/>
-                    <ColumnDefinition Width="70*"/>
+                    <ColumnDefinition Width="50*"/>
+                    <ColumnDefinition Width="20*"/>
                 </Grid.ColumnDefinitions>
                 <TextBlock Grid.Column="0" Text="Cof :" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                 <Slider Grid.Column="1" x:Name="slider_threadshold" ValueChanged="Slider_threadshold_ValueChanged" VerticalAlignment="Center" Margin="10"/>
+                <TextBlock Grid.Column="2" x:Name="tb_threshold" Text="0.0" VerticalAlignment="Center" HorizontalAlignment="Center" FontWeight="Bold" FontSize="16"/>
             </Grid>
-
+            <Grid Grid.Row="3">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="15*"/>
+                    <RowDefinition Height="85*"/>
+                </Grid.RowDefinitions>
+                <Grid Grid.Row="0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="50*"/>
+                        <ColumnDefinition Width="50*"/>
+                    </Grid.ColumnDefinitions>
+                    <RadioButton Grid.Column="0" x:Name="rbtn_online" Content="Online" Click="Rbtn_online_Click" HorizontalAlignment="Center" VerticalAlignment="Center" IsChecked="True"/>
+                    <RadioButton Grid.Column="1" x:Name="rbtn_offline" Content="Offline" Click="Rbtn_offline_Click" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Grid>
+                <GroupBox Grid.Row="1" Header="Message">
+                    <StackPanel>
+                        <TextBox Grid.Row="1" x:Name="tb_inference_result" IsReadOnly="False" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" Height="228"/>
+                    </StackPanel>
+                </GroupBox>
+            </Grid>
+            <!--<Grid Grid.Row="4">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="50*"/>
+                    <ColumnDefinition Width="50*"/>
+                </Grid.ColumnDefinitions>
+                <Button Grid.Column="0" x:Name="btn_start" Content="Start" Margin="5" Click="Btn_start_Click"/>
+                <Button Grid.Column="1" x:Name="btn_stop" Content="Stop" Margin="5" Click="Btn_stop_Click"/>
+            </Grid>-->
         </Grid>
-        <Grid Grid.Column="1">
-            <Image x:Name="rawimage" Stretch="Fill"/>
-            <Canvas x:Name="canvas"/>
+        <Grid Grid.Column="1" Margin="5">
+            <GroupBox Header="Result"/>
+            <Image x:Name="rawimage" Stretch="Fill" Margin="5, 15, 5, 5" Width="538" Height="390"/>
+            <Canvas x:Name="canvas" Margin="5, 15, 5, 5" Width="538" Height="390"/>
         </Grid>
     </Grid>
 </Window>
