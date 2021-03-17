@@ -99,7 +99,9 @@ namespace innovino_general_objectdetection_app
         [DllImport("kernel32.dll")]
         private static extern void OutputDebugString(string lpOutputString);
         [DllImport("gdi32.dll")]
-        public static extern bool DeleteObject(IntPtr hObject);
+        private static extern bool DeleteObject(IntPtr hObject);
+        [DllImport("kernel32.dll")]
+        private static extern uint GetTickCount();
 
 
         //app
@@ -111,8 +113,13 @@ namespace innovino_general_objectdetection_app
         private string last_image = "";
         private VideoCapture objVideoCapture = new VideoCapture();
         private BackgroundWorker bk_online_source = new BackgroundWorker();
+        private BackgroundWorker bk_offline_source = new BackgroundWorker();
         private bool m_bStopIdentify = false;
         private double infer_conf_threshold = 0.0f;
+        private bool bLock = false;
+        private double fRatioX = 0.0;
+        private double fRatioY = 0.0;
+        private uint start = 0, end = 0;
 
         public MainWindow()
         {
@@ -121,122 +128,231 @@ namespace innovino_general_objectdetection_app
 
         private void Window_Loaded(object sender, RoutedEventArgs e)
         {
-
+            //Intial IVINO libray
             if (IVINO_Init(ref serviceid) != RESULT.OK)
             {
                 MessageBox.Show("IVINO_Init failed.");
                 this.Close();
             }
 
+            //Get All available devices and add to combobox
             init_device_combobox();
 
+            //Prepare all pre-train models and add to combobox
             init_model_combobox();
 
-            OMZ_Model model = new OMZ_Model();
-            model.lpBIN = model_path[cb_omz_models.SelectedIndex] + ".bin";
-            model.lpXML = model_path[cb_omz_models.SelectedIndex] + ".xml";
-            model.lpDevice = device_name[cb_device.SelectedIndex];
+            //Initial online loop.
+            bk_online_source.DoWork += Bk_online_source_DoWork;
+            bk_online_source.WorkerSupportsCancellation = true;
 
-            if(IVINO_AddEngine(serviceid, ref model) < 0)
+            //Initial offline flow.
+            bk_offline_source.DoWork += Bk_offline_source_DoWork;
+        }
+
+        private void Bk_offline_source_DoWork(object sender, DoWorkEventArgs e)
+        {
+            //throw new NotImplementedException();
+
+            OutputDebugString("offline " + last_image);
+            while (bLock)
             {
-                MessageBox.Show("IVINO_AddEngine failed.");
+                m_bStopIdentify = true;
+                OutputDebugString("bLock!!!");
             }
 
-            bk_online_source.DoWork += Bk_online_source_DoWork;
-            bk_online_source.RunWorkerAsync();
+            while (!bk_online_source.CancellationPending)
+            {
+                bk_online_source.CancelAsync();
+                OutputDebugString("bk_online_source.CancellationPending!!!");
+            }
+
+            start = GetTickCount();
+
+            Mat frame = Cv2.ImRead(last_image, ImreadModes.Color);
+            Application.Current.Dispatcher.Invoke(new Action(() =>
+            {
+                rawimage.Source = BitmapToBitmapSource(OpenCvSharp.Extensions.BitmapConverter.ToBitmap(frame));
+            }));
+
+            fRatioX = rawimage.ActualWidth / frame.Cols;
+            fRatioY = rawimage.ActualHeight / frame.Rows;
+
+            ImageData data = new ImageData();
+            data.uiWidth = (UInt16)frame.Cols;
+            data.uiHeight = (UInt16)frame.Rows;
+            data.uiSize = (UInt32)(frame.Cols * frame.Rows * frame.Channels());
+            data.pData = frame.Data;
+
+            Application.Current.Dispatcher.Invoke(new Action(() =>
+            {
+                for (int i = 0; i < canvas.Children.Count;)
+                {
+                    canvas.Children.RemoveAt(0);
+                }
+
+                tb_inference_result.Text = "";
+            }));
+
+            last_result.Clear();
+
+            ObjectDatas output = new ObjectDatas();
+            int nResult = IVINO_Inference(serviceid, ref data, ref output, false);            
+            if (nResult > 0)
+            {
+                end = GetTickCount();
+
+                for (int n = 0; n < output.nCount; n++)
+                {
+                    ObjectData obj = Marshal.PtrToStructure<ObjectData>(output.pObjects + Marshal.SizeOf(typeof(ObjectData)) * n);
+                    last_result.Add(obj);
+                }
+
+                foreach (ObjectData obj in last_result)
+                {
+                    if (obj.label == 0)
+                    {
+                        continue;
+                    }
+
+                    if (obj.conf < infer_conf_threshold)
+                    {
+                        continue;
+                    }
+
+                    int x = Math.Min(obj.x_min, obj.x_max);
+                    int y = Math.Min(obj.y_min, obj.y_max);
+                    int width = Math.Max(obj.x_min, obj.x_max) - x;
+                    int height = Math.Max(obj.y_min, obj.y_max) - y;
+
+                    Application.Current.Dispatcher.Invoke(new Action(() =>
+                    {
+                        System.Windows.Shapes.Rectangle rect;
+                        rect = new System.Windows.Shapes.Rectangle();
+                        rect.Stroke = new SolidColorBrush(Colors.Red);
+                        rect.StrokeThickness = 2;
+                        rect.Width = width * fRatioX;
+                        rect.Height = height * fRatioY;
+                        Canvas.SetLeft(rect, x * fRatioX);
+                        Canvas.SetTop(rect, y * fRatioY);
+                        canvas.Children.Add(rect);
+
+                        string logmsg = "Off(" + (end - start) + "ms)" + "Label:" + obj.label + ",BBox(" + obj.x_min + "," + obj.y_min + "," + obj.x_max + "," + obj.y_max + ")";
+                        tb_inference_result.AppendText(logmsg + Environment.NewLine);
+                        tb_inference_result.AppendText("rawimage width : " + frame.Cols + " height : " + frame.Rows + Environment.NewLine);
+                        tb_inference_result.ScrollToEnd();
+                    }));
+                }
+            }
         }
 
         private void Bk_online_source_DoWork(object sender, DoWorkEventArgs e)
         {
-            if (!objVideoCapture.IsOpened())
+            start = GetTickCount();
+            bool bTimeout = false;
+            while (!bTimeout && !objVideoCapture.IsOpened())
             {
-                objVideoCapture.Open(0);
+                if (GetTickCount() - start < 5000)
+                    objVideoCapture.Open(0);
+                else
+                    bTimeout = true;
             }
 
             while (!m_bStopIdentify)
             {
                 try
                 {
-                    using (Mat frame = new Mat())
+                    if(!bLock)
                     {
-                        if (objVideoCapture.Read(frame))
+                        bLock = true;
+                        using (Mat frame = new Mat())
                         {
-                            //show the frame to image
-                            Application.Current.Dispatcher.Invoke(new Action(() =>
-                            {                                
-                                Cv2.Resize(frame, frame, new OpenCvSharp.Size(rawimage.Width, rawimage.Height));
-                                rawimage.Source = BitmapToBitmapSource(OpenCvSharp.Extensions.BitmapConverter.ToBitmap(frame));                                
-                            }));
-
-                            //Do Inference in innovino-sdk
-                            //Cv2.CvtColor(image, image, ColorConversionCodes.RGB2BGR);
-                            ImageData data = new ImageData();
-                            data.uiWidth = (UInt16)frame.Cols;
-                            data.uiHeight = (UInt16)frame.Rows;
-                            data.uiSize = (UInt32)(frame.Cols * frame.Rows * frame.Channels());
-                            data.pData = frame.Data;
-
-                            ObjectDatas output = new ObjectDatas();
-                            int nResult = IVINO_Inference(serviceid, ref data, ref output, false);
-                            if (nResult > 0)
-                            {
-                                Application.Current.Dispatcher.Invoke(new Action(() =>
+                                start = GetTickCount();
+                                if (objVideoCapture.Read(frame))
                                 {
-                                    canvas.Children.Clear();
-                                }));
-
-                                last_result.Clear();
-
-                                for (int n = 0; n < output.nCount; n++)
-                                {
-                                    ObjectData obj = Marshal.PtrToStructure<ObjectData>(output.pObjects + Marshal.SizeOf(typeof(ObjectData)) * n);
-                                    last_result.Add(obj);
-                                }
-
-                                foreach (ObjectData obj in last_result)
-                                {
-                                    if (obj.label == 0)
-                                    {
-                                        continue;
-                                    }
-
-                                    if (obj.conf < infer_conf_threshold)
-                                    {
-                                        continue;
-                                    }
-
-                                    //int weight = 2;
-                                    int x = Math.Min(obj.x_min, obj.x_max);
-                                    int y = Math.Min(obj.y_min, obj.y_max);
-                                    int width = Math.Max(obj.x_min, obj.x_max) - x;
-                                    int height = Math.Max(obj.y_min, obj.y_max) - y;
-                                    //Cv2.Rectangle(image, new OpenCvSharp.Rect(x, y, width, height), Scalar.Red, 3);
-                                    //OpenCvSharp.Rect rt;
-                                    //rt.X = x - weight;
-                                    //rt.Y = y - weight;
-                                    //rt.Width = width + weight;
-                                    //rt.Height = height + weight;
-
+                                    //show the frame to image
                                     Application.Current.Dispatcher.Invoke(new Action(() =>
                                     {
-                                        System.Windows.Shapes.Rectangle rect;
-                                        rect = new System.Windows.Shapes.Rectangle();
-                                        rect.Stroke = new SolidColorBrush(Colors.Red);
-                                        rect.StrokeThickness = 2;
-                                        rect.Width = width;
-                                        rect.Height = height;
-                                        Canvas.SetLeft(rect, x);
-                                        Canvas.SetTop(rect, y);
-                                        canvas.Children.Add(rect);
+                                        Cv2.Resize(frame, frame, new OpenCvSharp.Size(rawimage.Width, rawimage.Height));
+                                        rawimage.Source = BitmapToBitmapSource(OpenCvSharp.Extensions.BitmapConverter.ToBitmap(frame));
                                     }));
+
+                                    //Do Inference in innovino-sdk
+                                    ImageData data = new ImageData();
+                                    data.uiWidth = (UInt16)frame.Cols;
+                                    data.uiHeight = (UInt16)frame.Rows;
+                                    data.uiSize = (UInt32)(frame.Cols * frame.Rows * frame.Channels());
+                                    data.pData = frame.Data;
+
+                                    fRatioX = rawimage.ActualWidth / frame.Cols;
+                                    fRatioY = rawimage.ActualHeight / frame.Rows;
+
+                                    ObjectDatas output = new ObjectDatas();
+                                    int nResult = IVINO_Inference(serviceid, ref data, ref output, false);
+                                    if (nResult > 0)
+                                    {
+                                        end = GetTickCount();
+
+                                        Application.Current.Dispatcher.Invoke(new Action(() =>
+                                        {
+                                            for (int i = 0; i < canvas.Children.Count;)
+                                            {
+                                                canvas.Children.RemoveAt(0);
+                                            }
+                                        }));
+
+                                        last_result.Clear();
+
+                                        for (int n = 0; n < output.nCount; n++)
+                                        {
+                                            ObjectData obj = Marshal.PtrToStructure<ObjectData>(output.pObjects + Marshal.SizeOf(typeof(ObjectData)) * n);
+                                            last_result.Add(obj);
+                                        }
+
+                                        foreach (ObjectData obj in last_result)
+                                        {
+                                            if (obj.label == 0)
+                                            {
+                                                continue;
+                                            }
+
+                                            if (obj.conf < infer_conf_threshold)
+                                            {
+                                                continue;
+                                            }
+
+                                            int x = Math.Min(obj.x_min, obj.x_max);
+                                            int y = Math.Min(obj.y_min, obj.y_max);
+                                            int width = Math.Max(obj.x_min, obj.x_max) - x;
+                                            int height = Math.Max(obj.y_min, obj.y_max) - y;
+
+                                            Application.Current.Dispatcher.Invoke(new Action(() =>
+                                            {
+                                                System.Windows.Shapes.Rectangle rect;
+                                                rect = new System.Windows.Shapes.Rectangle();
+                                                rect.Stroke = new SolidColorBrush(Colors.Red);
+                                                rect.StrokeThickness = 2;
+                                                rect.Width = width * fRatioX;
+                                                rect.Height = height * fRatioY;
+                                                Canvas.SetLeft(rect, x * fRatioX);
+                                                Canvas.SetTop(rect, y * fRatioY);
+                                                canvas.Children.Add(rect);
+
+                                                string logmsg = "On(" + (end - start) + "ms)" + "Label:" + obj.label + "Confidence:" + obj.conf + ",BBox(" + obj.x_min + "," + obj.y_min + "," + obj.x_max + "," + obj.y_max + ")";
+                                                tb_inference_result.AppendText(logmsg + Environment.NewLine);
+                                                tb_inference_result.ScrollToEnd();
+                                            }));
+                                        }
+                                    }
                                 }
                             }
                         }
-                    }
                 }
                 catch (Exception ex)
                 {
                     OutputDebugString("Bk_online_source_DoWork Exception : " + ex.Message);
+                }
+                finally{
+                    bLock = false;
                 }
             }
         }
@@ -249,8 +365,6 @@ namespace innovino_general_objectdetection_app
                 MessageBox.Show("IVINO_GetAvailableDevices failed.");
                 this.Close();
             }
-
-            //OutputDebugString("deivce.ncount : " + devices.nCount);
 
             for (int i = 0; i < devices.nCount; i++)
             {
@@ -278,30 +392,7 @@ namespace innovino_general_objectdetection_app
             }
             
             cb_omz_models.SelectedIndex = 0;
-        }
-
-        private void Cb_omz_models_SelectionChanged(object sender, SelectionChangedEventArgs e)
-        {
-            try
-            {
-                if (serviceid != IntPtr.Zero)
-                {
-                    OMZ_Model model = new OMZ_Model();
-                    model.lpBIN = model_path[cb_omz_models.SelectedIndex] + ".bin";
-                    model.lpXML = model_path[cb_omz_models.SelectedIndex] + ".xml";
-                    model.lpDevice = device_name[cb_device.SelectedIndex];
-
-                    if (IVINO_AddEngine(serviceid, ref model) < 0)
-                    {
-                        MessageBox.Show("IVINO_AddEngine failed.");
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                OutputDebugString(ex.Message);
-            }
-        }
+        }        
 
         private void Slider_threadshold_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
         {
@@ -316,99 +407,70 @@ namespace innovino_general_objectdetection_app
                 {
                     infer_conf_threshold = Math.Round(obj.Value, 1) / 10.0f;
                     tb_threshold.Text = infer_conf_threshold.ToString();
+
+                    _redraw_bbox(last_result);
                 }                
             }
             catch (Exception ex)
             {
                 OutputDebugString(ex.Message);
             }
-            
-            //_show_bbox(last_result);
         }
 
         private void Btn_start_Click(object sender, RoutedEventArgs e)
         {
 
+            try
+            {
+                OMZ_Model model = new OMZ_Model();
+                model.lpBIN = model_path[cb_omz_models.SelectedIndex] + ".bin";
+                model.lpXML = model_path[cb_omz_models.SelectedIndex] + ".xml";
+                model.lpDevice = device_name[cb_device.SelectedIndex];
+
+                if (IVINO_AddEngine(serviceid, ref model) < 0)
+                {
+                    MessageBox.Show("IVINO_AddEngine failed.");
+                }
+
+                //update controllers on UI
+                Confidence.Visibility = Visibility.Visible;
+                Source.Visibility = Visibility.Visible;
+                btn_stop.IsEnabled = true;
+                btn_start.IsEnabled = false;
+                cb_device.IsEnabled = false;
+                cb_omz_models.IsEnabled = false;
+
+                m_bStopIdentify = false;
+                bk_online_source.RunWorkerAsync();
+            }
+            catch(Exception ex)
+            {
+                OutputDebugString("[Btn_start_Click] Exception : " + ex.Message);
+            }
         }
 
         private void Btn_stop_Click(object sender, RoutedEventArgs e)
         {
+            try
+            {
+                if (objVideoCapture.IsOpened())
+                {
+                    m_bStopIdentify = true;
+                    objVideoCapture.Release();
+                }
 
+                Confidence.Visibility = Visibility.Collapsed;
+                Source.Visibility = Visibility.Collapsed;
+                btn_stop.IsEnabled = false;
+                btn_start.IsEnabled = true;
+                cb_device.IsEnabled = true;
+                cb_omz_models.IsEnabled = true;
+            }
+            catch (Exception ex)
+            {
+                OutputDebugString("[Btn_stop_Click] Exception : " + ex.Message);
+            }            
         }
-
-        private ObjectDatas Do_Inference(Mat frame)
-        {
-            //Do Inference in innovino-sdk
-            //Cv2.CvtColor(image, image, ColorConversionCodes.RGB2BGR);
-            ImageData data = new ImageData();
-            data.uiWidth = (UInt16)frame.Cols;
-            data.uiHeight = (UInt16)frame.Rows;
-            data.uiSize = (UInt32)(frame.Cols * frame.Rows * frame.Channels());
-            data.pData = frame.Data;
-
-            ObjectDatas output = new ObjectDatas();            
-            int nResult = IVINO_Inference(serviceid, ref data, ref output, false);
-            return output;
-            //if (nResult > 0)
-            //{
-            //    //Application.Current.Dispatcher.Invoke(new Action(() =>
-            //    //{
-            //    //    canvas.Children.Clear();
-            //    //}));
-
-            //    last_result.Clear();
-
-            //    for (int n = 0; n < output.nCount; n++)
-            //    {
-            //        ObjectData obj = Marshal.PtrToStructure<ObjectData>(output.pObjects + Marshal.SizeOf(typeof(ObjectData)) * n);
-            //        last_result.Add(obj);
-            //    }
-
-            //    foreach (ObjectData obj in last_result)
-            //    {
-            //        if (obj.label == 0)
-            //        {
-            //            continue;
-            //        }
-
-            //        if (obj.conf < infer_conf_threshold)
-            //        {
-            //            continue;
-            //        }
-
-            //        //int weight = 2;
-            //        int x = Math.Min(obj.x_min, obj.x_max);
-            //        int y = Math.Min(obj.y_min, obj.y_max);
-            //        int width = Math.Max(obj.x_min, obj.x_max) - x;
-            //        int height = Math.Max(obj.y_min, obj.y_max) - y;
-            //        //Cv2.Rectangle(image, new OpenCvSharp.Rect(x, y, width, height), Scalar.Red, 3);
-            //        //OpenCvSharp.Rect rt;
-            //        //rt.X = x - weight;
-            //        //rt.Y = y - weight;
-            //        //rt.Width = width + weight;
-            //        //rt.Height = height + weight;
-
-            //        Application.Current.Dispatcher.Invoke(new Action(() =>
-            //        {
-            //            DrawBBox();
-            //        }));
-            //    }
-            //}
-        }
-
-        private void DrawBBox(int x, int y, int width, int height)
-        {
-            System.Windows.Shapes.Rectangle rect;
-            rect = new System.Windows.Shapes.Rectangle();
-            rect.Stroke = new SolidColorBrush(Colors.Red);
-            rect.StrokeThickness = 2.5;
-            rect.Width = width;
-            rect.Height = height;
-            Canvas.SetLeft(rect, x);
-            Canvas.SetTop(rect, y);
-            canvas.Children.Add(rect);
-        }
-
         
         private BitmapSource BitmapToBitmapSource(System.Drawing.Bitmap bitmap)
         {
@@ -419,82 +481,17 @@ namespace innovino_general_objectdetection_app
         }
 
         private void Rbtn_offline_Click(object sender, RoutedEventArgs e)
-        {            
+        {
             OpenFileDialog openFileDialog = new OpenFileDialog();
             if (openFileDialog.ShowDialog() == true)
                 last_image = openFileDialog.FileName;
 
             if (File.Exists(last_image))
             {
-                //check the camera status. Closed it if it opened.
-                if (objVideoCapture.IsOpened())
-                {
-                    m_bStopIdentify = true;
-                    objVideoCapture.Release();
-                }
-                
-                Mat frame = Cv2.ImRead(last_image, ImreadModes.Color);                
-                rawimage.Source = BitmapToBitmapSource(OpenCvSharp.Extensions.BitmapConverter.ToBitmap(frame));
-                
-                //ImageData data = new ImageData();
-                //data.uiWidth = (UInt16)frame.Cols;
-                //data.uiHeight = (UInt16)frame.Rows;
-                //data.uiSize = (UInt32)(frame.Cols * frame.Rows * frame.Channels());
-                //data.pData = frame.Data;
-
-                //ObjectDatas output = new ObjectDatas();
-                //int nResult = IVINO_Inference(serviceid, ref data, ref output, false);
-                //if (nResult > 0)
-                //{
-                //    OutputDebugString("canvas.chiledren.count : " + canvas.Children.Count);                    
-                //    canvas.Children.Clear();
-                //    OutputDebugString("canvas.chiledren.count : " + canvas.Children.Count);
-                //    canvas.UpdateLayout();
-                //    canvas.Visibility = Visibility.Collapsed;
-                //    canvas.Visibility = Visibility.Visible;
-                    
-
-                //    last_result.Clear();
-
-                //    for (int n = 0; n < output.nCount; n++)
-                //    {
-                //        ObjectData obj = Marshal.PtrToStructure<ObjectData>(output.pObjects + Marshal.SizeOf(typeof(ObjectData)) * n);
-                //        last_result.Add(obj);
-                //    }
-
-                //    //foreach (ObjectData obj in last_result)
-                //    //{
-                //    //    if (obj.label == 0)
-                //    //    {
-                //    //        continue;
-                //    //    }
-
-                //    //    if (obj.conf < infer_conf_threshold)
-                //    //    {
-                //    //        continue;
-                //    //    }
-
-                //    //    //int weight = 2;
-                //    //    int x = Math.Min(obj.x_min, obj.x_max);
-                //    //    int y = Math.Min(obj.y_min, obj.y_max);
-                //    //    int width = Math.Max(obj.x_min, obj.x_max) - x;
-                //    //    int height = Math.Max(obj.y_min, obj.y_max) - y;
-                        
-                //    //    System.Windows.Shapes.Rectangle rect;
-                //    //    rect = new System.Windows.Shapes.Rectangle();
-                //    //    rect.Stroke = new SolidColorBrush(Colors.Red);
-                //    //    rect.StrokeThickness = 2;
-                //    //    rect.Width = width;
-                //    //    rect.Height = height;
-                //    //    Canvas.SetLeft(rect, x);
-                //    //    Canvas.SetTop(rect, y);
-                //    //    canvas.Children.Add(rect);
-                //    //    canvas.UpdateLayout();
-                //    //}
-
-                //    this.UpdateLayout();
-                //}
-            }                
+                m_bStopIdentify = true;
+                bk_online_source.CancelAsync();
+                bk_offline_source.RunWorkerAsync();
+            }
         }
 
         private void Rbtn_online_Click(object sender, RoutedEventArgs e)
@@ -511,31 +508,48 @@ namespace innovino_general_objectdetection_app
             m_bStopIdentify = true;
 
             if (objVideoCapture.IsOpened())
-            {                
+            {
                 objVideoCapture.Release();
             }
         }
 
-        private void Cb_device_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        private void _redraw_bbox(List<ObjectData> objs)
         {
-            try
+            for (int i = 0; i < canvas.Children.Count;)
             {
-                if (serviceid != IntPtr.Zero)
-                {
-                    OMZ_Model model = new OMZ_Model();
-                    model.lpBIN = model_path[cb_omz_models.SelectedIndex] + ".bin";
-                    model.lpXML = model_path[cb_omz_models.SelectedIndex] + ".xml";
-                    model.lpDevice = device_name[cb_device.SelectedIndex];
-
-                    if (IVINO_AddEngine(serviceid, ref model) < 0)
-                    {
-                        MessageBox.Show("IVINO_AddEngine failed.");
-                    }
-                }
+                canvas.Children.RemoveAt(0);
             }
-            catch (Exception ex)
+
+            foreach (ObjectData obj in objs)
             {
-                OutputDebugString(ex.Message);
+                if (obj.label == 0)
+                {
+                    continue;
+                }
+
+                if (obj.conf < infer_conf_threshold)
+                {
+                    continue;
+                }
+
+                int x = Math.Min(obj.x_min, obj.x_max);
+                int y = Math.Min(obj.y_min, obj.y_max);
+                int width = Math.Max(obj.x_min, obj.x_max) - x;
+                int height = Math.Max(obj.y_min, obj.y_max) - y;
+
+                System.Windows.Shapes.Rectangle rect;
+                rect = new System.Windows.Shapes.Rectangle();
+                rect.Stroke = new SolidColorBrush(Colors.Red);
+                rect.StrokeThickness = 2;
+                rect.Width = width * fRatioX;
+                rect.Height = height * fRatioY;
+                Canvas.SetLeft(rect, x * fRatioX);
+                Canvas.SetTop(rect, y * fRatioY);
+                canvas.Children.Add(rect);
+
+                string logmsg = "On(" + (end - start) + "ms)" + "Label:" + obj.label + "Confidence:" + obj.conf + ",BBox(" + obj.x_min + "," + obj.y_min + "," + obj.x_max + "," + obj.y_max + ")";
+                tb_inference_result.AppendText(logmsg + Environment.NewLine);
+                tb_inference_result.ScrollToEnd();
             }
         }
     }

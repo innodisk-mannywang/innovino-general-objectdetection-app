@@ -16,8 +16,8 @@
                 <RowDefinition Height="10*"/>
                 <RowDefinition Height="10*"/>
                 <RowDefinition Height="10*"/>
-                <RowDefinition Height="70*"/>
-                <!--<RowDefinition Height="10*"/>-->
+                <RowDefinition Height="60*"/>
+                <RowDefinition Height="10*"/>
             </Grid.RowDefinitions>
             <Grid Grid.Row="0">
                 <Grid.ColumnDefinitions>
@@ -25,7 +25,7 @@
                     <ColumnDefinition Width="70*"/>
                 </Grid.ColumnDefinitions>
                 <TextBlock Grid.Column="0" Text="Device :" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                <ComboBox Grid.Column="1" x:Name="cb_device" SelectionChanged="Cb_device_SelectionChanged"  Margin="10"/>
+                <ComboBox Grid.Column="1" x:Name="cb_device" Margin="10"/>
             </Grid>
             <Grid Grid.Row="1">
                 <Grid.ColumnDefinitions>
@@ -33,15 +33,15 @@
                     <ColumnDefinition Width="70*"/>
                 </Grid.ColumnDefinitions>
                 <TextBlock Grid.Column="0" Text="Model :" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                <ComboBox Grid.Column="1" x:Name="cb_omz_models" SelectionChanged="Cb_omz_models_SelectionChanged" Margin="10"/>
+                <ComboBox Grid.Column="1" x:Name="cb_omz_models" Margin="10"/>
             </Grid>
-            <Grid Grid.Row="2">
+            <Grid Grid.Row="2" x:Name="Confidence" Visibility="Collapsed">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="30*"/>
                     <ColumnDefinition Width="50*"/>
                     <ColumnDefinition Width="20*"/>
                 </Grid.ColumnDefinitions>
-                <TextBlock Grid.Column="0" Text="Cof :" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                <TextBlock Grid.Column="0" Text="Cofidence :" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                 <Slider Grid.Column="1" x:Name="slider_threadshold" ValueChanged="Slider_threadshold_ValueChanged" VerticalAlignment="Center" Margin="10"/>
                 <TextBlock Grid.Column="2" x:Name="tb_threshold" Text="0.0" VerticalAlignment="Center" HorizontalAlignment="Center" FontWeight="Bold" FontSize="16"/>
             </Grid>
@@ -50,7 +50,7 @@
                     <RowDefinition Height="15*"/>
                     <RowDefinition Height="85*"/>
                 </Grid.RowDefinitions>
-                <Grid Grid.Row="0">
+                <Grid Grid.Row="0" x:Name="Source" Visibility="Collapsed">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="50*"/>
                         <ColumnDefinition Width="50*"/>
@@ -60,18 +60,18 @@
                 </Grid>
                 <GroupBox Grid.Row="1" Header="Message">
                     <StackPanel>
-                        <TextBox Grid.Row="1" x:Name="tb_inference_result" IsReadOnly="False" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" Height="228"/>
+                        <TextBox Grid.Row="1" x:Name="tb_inference_result" IsReadOnly="False" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" Height="193" FontSize="14"/>
                     </StackPanel>
                 </GroupBox>
             </Grid>
-            <!--<Grid Grid.Row="4">
+            <Grid Grid.Row="4">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="50*"/>
                     <ColumnDefinition Width="50*"/>
                 </Grid.ColumnDefinitions>
                 <Button Grid.Column="0" x:Name="btn_start" Content="Start" Margin="5" Click="Btn_start_Click"/>
-                <Button Grid.Column="1" x:Name="btn_stop" Content="Stop" Margin="5" Click="Btn_stop_Click"/>
-            </Grid>-->
+                <Button Grid.Column="1" x:Name="btn_stop" Content="Stop" Margin="5" Click="Btn_stop_Click" IsEnabled="False"/>
+            </Grid>
         </Grid>
         <Grid Grid.Column="1" Margin="5">
             <GroupBox Header="Result"/>
