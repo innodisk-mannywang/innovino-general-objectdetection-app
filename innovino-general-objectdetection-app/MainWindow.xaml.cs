@@ -90,7 +90,13 @@ namespace innovino_general_objectdetection_app
         [DllImport("InnoVINO.dll", CallingConvention = CallingConvention.Winapi)]
         private static extern int IVINO_AddEngine(IntPtr dwServiceId, ref OMZ_Model model);
         [DllImport("InnoVINO.dll", CallingConvention = CallingConvention.Winapi)]
-        private static extern int IVINO_Inference(IntPtr dwServiceId, ref ImageData pData, ref ObjectDatas pOutput, bool bAsync);
+        private static extern int IVINO_Inference(IntPtr dwServiceId, ref ImageData pData, ref ObjectDatas pOutput, bool bAsync);        
+        [DllImport("InnoVINO.dll", CallingConvention = CallingConvention.Winapi, CharSet = CharSet.Ansi)]
+        private static extern int IVINO_AddFace(IntPtr dwServiceId, ref ImageData pData, string label);
+        [DllImport("InnoVINO.dll", CallingConvention = CallingConvention.Winapi)]
+        private static extern int IVINO_FaceRecogEx(IntPtr dwServiceId, ref ImageData pData, ref ObjectData pOutput);
+        [DllImport("InnoVINO.dll", CallingConvention = CallingConvention.Winapi)]
+        private static extern float IVINO_FaceRecog(IntPtr dwServiceId, ref ImageData pData1, ref ImageData pData2, bool bAsync);
         [DllImport("InnoVINO.dll", CallingConvention = CallingConvention.Winapi)]
         private static extern RESULT IVINO_Uninit(IntPtr dwServiceId);
 
@@ -147,6 +153,55 @@ namespace innovino_general_objectdetection_app
 
             //Initial offline flow.
             bk_offline_source.DoWork += Bk_offline_source_DoWork;
+
+            load_face_image();
+        }
+
+        private void load_face_image()
+        {
+            string path = Directory.GetCurrentDirectory().Substring(0, Directory.GetCurrentDirectory().LastIndexOf(@"\")) + "\\InnoFaces_OnlyFace\\IPA";
+            string[] files = Directory.GetFiles(path);
+            
+            foreach (string file in files)
+            {
+                //Mat frame1 = Cv2.ImRead(file, ImreadModes.Color);
+                //ImageData data1 = new ImageData();
+                //data1.uiWidth = (UInt16)frame1.Cols;
+                //data1.uiHeight = (UInt16)frame1.Rows;
+                //data1.uiSize = (UInt32)(frame1.Cols * frame1.Rows * frame1.Channels());
+                //data1.pData = frame1.Data;
+                //OutputDebugString(file);
+
+                //string path2 = Directory.GetCurrentDirectory().Substring(0, Directory.GetCurrentDirectory().LastIndexOf(@"\")) + "\\InnoFaces_OnlyFace\\IPA2";
+                //string[] tmpfiles = Directory.GetFiles(path2);
+                //foreach (string tmpfile in tmpfiles)
+                //{
+                //    Mat frame2 = Cv2.ImRead(tmpfile, ImreadModes.Color);
+                //    ImageData data2 = new ImageData();
+                //    data2.uiWidth = (UInt16)frame2.Cols;
+                //    data2.uiHeight = (UInt16)frame2.Rows;
+                //    data2.uiSize = (UInt32)(frame2.Cols * frame2.Rows * frame2.Channels());
+                //    data2.pData = frame2.Data;
+
+                //    OutputDebugString(tmpfile);
+
+                //    float result = IVINO_FaceRecog(serviceid, ref data1, ref data2, true);
+                //    OutputDebugString("Conf : " + result);
+                //}
+
+                Mat frame = Cv2.ImRead(file, ImreadModes.Color);
+
+                //fRatioX = rawimage.ActualWidth / frame.Cols;
+                //fRatioY = rawimage.ActualHeight / frame.Rows;
+
+                ImageData data = new ImageData();
+                data.uiWidth = (UInt16)frame.Cols;
+                data.uiHeight = (UInt16)frame.Rows;
+                data.uiSize = (UInt32)(frame.Cols * frame.Rows * frame.Channels());
+                data.pData = frame.Data;
+                OutputDebugString(file);
+                IVINO_AddFace(serviceid, ref data, file.Substring(file.LastIndexOf(@"\") + 1, 4));
+            }
         }
 
         private void Bk_offline_source_DoWork(object sender, DoWorkEventArgs e)
@@ -325,8 +380,20 @@ namespace innovino_general_objectdetection_app
                                             int width = Math.Max(obj.x_min, obj.x_max) - x;
                                             int height = Math.Max(obj.y_min, obj.y_max) - y;
 
+                                            Mat m_roi = new Mat(frame, new OpenCvSharp.Rect(x, y, width, height));
+                                            Mat roi = new Mat();
+                                            m_roi.CopyTo(roi);
+                                            ImageData roidata = new ImageData();
+                                            roidata.uiWidth = (UInt16)roi.Cols;
+                                            roidata.uiHeight = (UInt16)roi.Rows;
+                                            roidata.uiSize = (UInt32)(roi.Cols * roi.Rows * roi.Channels());
+                                            roidata.pData = roi.Data;
+                                            ObjectData roioutput = new ObjectData();
+
                                             Application.Current.Dispatcher.Invoke(new Action(() =>
-                                            {
+                                            {                                                
+                                                IVINO_FaceRecogEx(serviceid, ref roidata, ref roioutput);
+
                                                 System.Windows.Shapes.Rectangle rect;
                                                 rect = new System.Windows.Shapes.Rectangle();
                                                 rect.Stroke = new SolidColorBrush(Colors.Red);
@@ -336,8 +403,14 @@ namespace innovino_general_objectdetection_app
                                                 Canvas.SetLeft(rect, x * fRatioX);
                                                 Canvas.SetTop(rect, y * fRatioY);
                                                 canvas.Children.Add(rect);
-
-                                                string logmsg = "On(" + (end - start) + "ms)" + "Label:" + obj.label + "Confidence:" + obj.conf + ",BBox(" + obj.x_min + "," + obj.y_min + "," + obj.x_max + "," + obj.y_max + ")";
+                                                Label frid = new Label();
+                                                frid.FontSize = 20;
+                                                frid.Foreground = Brushes.Red;
+                                                frid.Content = roioutput.label;
+                                                Canvas.SetLeft(frid, x * fRatioX);
+                                                Canvas.SetTop(frid, y * fRatioY);
+                                                canvas.Children.Add(frid);
+                                                string logmsg = "On(" + (end - start) + "ms)" + "Label:" + roioutput.label + " Confidence:" + obj.conf + ",BBox(" + obj.x_min + "," + obj.y_min + "," + obj.x_max + "," + obj.y_max + ")";
                                                 tb_inference_result.AppendText(logmsg + Environment.NewLine);
                                                 tb_inference_result.ScrollToEnd();
                                             }));
