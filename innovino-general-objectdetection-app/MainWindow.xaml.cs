@@ -94,7 +94,7 @@ namespace innovino_general_objectdetection_app
         [DllImport("InnoVINO.dll", CallingConvention = CallingConvention.Winapi, CharSet = CharSet.Ansi)]
         private static extern int IVINO_AddFace(IntPtr dwServiceId, ref ImageData pData, string label);
         [DllImport("InnoVINO.dll", CallingConvention = CallingConvention.Winapi)]
-        private static extern int IVINO_FaceRecogEx(IntPtr dwServiceId, ref ImageData pData, ref ObjectData pOutput);
+        private static extern float IVINO_FaceRecogEx(IntPtr dwServiceId, ref ImageData pData, ref ObjectData pOutput);
         [DllImport("InnoVINO.dll", CallingConvention = CallingConvention.Winapi)]
         private static extern float IVINO_FaceRecog(IntPtr dwServiceId, ref ImageData pData1, ref ImageData pData2, bool bAsync);
         [DllImport("InnoVINO.dll", CallingConvention = CallingConvention.Winapi)]
@@ -321,104 +321,105 @@ namespace innovino_general_objectdetection_app
                         bLock = true;
                         using (Mat frame = new Mat())
                         {
-                                start = GetTickCount();
-                                if (objVideoCapture.Read(frame))
+                            start = GetTickCount();
+                            if (objVideoCapture.Read(frame))
+                            {
+                                //show the frame to image
+                                Application.Current.Dispatcher.Invoke(new Action(() =>
                                 {
-                                    //show the frame to image
+                                    Cv2.Resize(frame, frame, new OpenCvSharp.Size(rawimage.Width, rawimage.Height));
+                                    rawimage.Source = BitmapToBitmapSource(OpenCvSharp.Extensions.BitmapConverter.ToBitmap(frame));
+                                }));
+
+                                //Do Inference in innovino-sdk
+                                ImageData data = new ImageData();
+                                data.uiWidth = (UInt16)frame.Cols;
+                                data.uiHeight = (UInt16)frame.Rows;
+                                data.uiSize = (UInt32)(frame.Cols * frame.Rows * frame.Channels());
+                                data.pData = frame.Data;
+
+                                fRatioX = rawimage.ActualWidth / frame.Cols;
+                                fRatioY = rawimage.ActualHeight / frame.Rows;
+
+                                ObjectDatas output = new ObjectDatas();
+                                int nResult = IVINO_Inference(serviceid, ref data, ref output, false);
+                                if (nResult > 0)
+                                {
+                                    end = GetTickCount();
+
                                     Application.Current.Dispatcher.Invoke(new Action(() =>
                                     {
-                                        Cv2.Resize(frame, frame, new OpenCvSharp.Size(rawimage.Width, rawimage.Height));
-                                        rawimage.Source = BitmapToBitmapSource(OpenCvSharp.Extensions.BitmapConverter.ToBitmap(frame));
+                                        for (int i = 0; i < canvas.Children.Count;)
+                                        {
+                                            canvas.Children.RemoveAt(0);
+                                        }
                                     }));
 
-                                    //Do Inference in innovino-sdk
-                                    ImageData data = new ImageData();
-                                    data.uiWidth = (UInt16)frame.Cols;
-                                    data.uiHeight = (UInt16)frame.Rows;
-                                    data.uiSize = (UInt32)(frame.Cols * frame.Rows * frame.Channels());
-                                    data.pData = frame.Data;
+                                    last_result.Clear();
 
-                                    fRatioX = rawimage.ActualWidth / frame.Cols;
-                                    fRatioY = rawimage.ActualHeight / frame.Rows;
-
-                                    ObjectDatas output = new ObjectDatas();
-                                    int nResult = IVINO_Inference(serviceid, ref data, ref output, false);
-                                    if (nResult > 0)
+                                    for (int n = 0; n < output.nCount; n++)
                                     {
-                                        end = GetTickCount();
+                                        ObjectData obj = Marshal.PtrToStructure<ObjectData>(output.pObjects + Marshal.SizeOf(typeof(ObjectData)) * n);
+                                        last_result.Add(obj);
+                                    }
+
+                                    foreach (ObjectData obj in last_result)
+                                    {
+                                        if (obj.label == 0)
+                                        {
+                                            continue;
+                                        }
+
+                                        if (obj.conf < 0.9f)
+                                        {
+                                            continue;
+                                        }
+
+                                        int x = Math.Min(obj.x_min, obj.x_max);
+                                        int y = Math.Min(obj.y_min, obj.y_max);
+                                        int width = Math.Max(obj.x_min, obj.x_max) - x;
+                                        int height = Math.Max(obj.y_min, obj.y_max) - y;
+
+                                        Mat m_roi = new Mat(frame, new OpenCvSharp.Rect(x, y, width, height));
+                                        Mat roi = new Mat();
+                                        m_roi.CopyTo(roi);
+                                        ImageData roidata = new ImageData();
+                                        roidata.uiWidth = (UInt16)roi.Cols;
+                                        roidata.uiHeight = (UInt16)roi.Rows;
+                                        roidata.uiSize = (UInt32)(roi.Cols * roi.Rows * roi.Channels());
+                                        roidata.pData = roi.Data;
+                                        ObjectData roioutput = new ObjectData();
+
+                                        if (IVINO_FaceRecogEx(serviceid, ref roidata, ref roioutput) < infer_conf_threshold)
+                                            continue;
 
                                         Application.Current.Dispatcher.Invoke(new Action(() =>
                                         {
-                                            for (int i = 0; i < canvas.Children.Count;)
-                                            {
-                                                canvas.Children.RemoveAt(0);
-                                            }
+                                            System.Windows.Shapes.Rectangle rect;
+                                            rect = new System.Windows.Shapes.Rectangle();
+                                            rect.Stroke = new SolidColorBrush(Colors.Red);
+                                            rect.StrokeThickness = 2;
+                                            rect.Width = width * fRatioX;
+                                            rect.Height = height * fRatioY;
+                                            Canvas.SetLeft(rect, x * fRatioX);
+                                            Canvas.SetTop(rect, y * fRatioY);
+                                            canvas.Children.Add(rect);
+                                            Label frid = new Label();
+                                            frid.FontSize = 20;
+                                            frid.Foreground = Brushes.Red;
+                                            frid.Content = roioutput.label;
+                                            Canvas.SetLeft(frid, x * fRatioX);
+                                            Canvas.SetTop(frid, y * fRatioY);
+                                            canvas.Children.Add(frid);
+                                            string logmsg = "On(" + (end - start) + "ms)" + "Label:" + roioutput.label + " Confidence:" + roioutput.conf + ",BBox(" + obj.x_min + "," + obj.y_min + "," + obj.x_max + "," + obj.y_max + ")";
+                                            tb_inference_result.AppendText(logmsg + Environment.NewLine);
+                                            tb_inference_result.ScrollToEnd();
                                         }));
-
-                                        last_result.Clear();
-
-                                        for (int n = 0; n < output.nCount; n++)
-                                        {
-                                            ObjectData obj = Marshal.PtrToStructure<ObjectData>(output.pObjects + Marshal.SizeOf(typeof(ObjectData)) * n);
-                                            last_result.Add(obj);
-                                        }
-
-                                        foreach (ObjectData obj in last_result)
-                                        {
-                                            if (obj.label == 0)
-                                            {
-                                                continue;
-                                            }
-
-                                            if (obj.conf < infer_conf_threshold)
-                                            {
-                                                continue;
-                                            }
-
-                                            int x = Math.Min(obj.x_min, obj.x_max);
-                                            int y = Math.Min(obj.y_min, obj.y_max);
-                                            int width = Math.Max(obj.x_min, obj.x_max) - x;
-                                            int height = Math.Max(obj.y_min, obj.y_max) - y;
-
-                                            Mat m_roi = new Mat(frame, new OpenCvSharp.Rect(x, y, width, height));
-                                            Mat roi = new Mat();
-                                            m_roi.CopyTo(roi);
-                                            ImageData roidata = new ImageData();
-                                            roidata.uiWidth = (UInt16)roi.Cols;
-                                            roidata.uiHeight = (UInt16)roi.Rows;
-                                            roidata.uiSize = (UInt32)(roi.Cols * roi.Rows * roi.Channels());
-                                            roidata.pData = roi.Data;
-                                            ObjectData roioutput = new ObjectData();
-
-                                            Application.Current.Dispatcher.Invoke(new Action(() =>
-                                            {                                                
-                                                IVINO_FaceRecogEx(serviceid, ref roidata, ref roioutput);
-
-                                                System.Windows.Shapes.Rectangle rect;
-                                                rect = new System.Windows.Shapes.Rectangle();
-                                                rect.Stroke = new SolidColorBrush(Colors.Red);
-                                                rect.StrokeThickness = 2;
-                                                rect.Width = width * fRatioX;
-                                                rect.Height = height * fRatioY;
-                                                Canvas.SetLeft(rect, x * fRatioX);
-                                                Canvas.SetTop(rect, y * fRatioY);
-                                                canvas.Children.Add(rect);
-                                                Label frid = new Label();
-                                                frid.FontSize = 20;
-                                                frid.Foreground = Brushes.Red;
-                                                frid.Content = roioutput.label;
-                                                Canvas.SetLeft(frid, x * fRatioX);
-                                                Canvas.SetTop(frid, y * fRatioY);
-                                                canvas.Children.Add(frid);
-                                                string logmsg = "On(" + (end - start) + "ms)" + "Label:" + roioutput.label + " Confidence:" + obj.conf + ",BBox(" + obj.x_min + "," + obj.y_min + "," + obj.x_max + "," + obj.y_max + ")";
-                                                tb_inference_result.AppendText(logmsg + Environment.NewLine);
-                                                tb_inference_result.ScrollToEnd();
-                                            }));
-                                        }
                                     }
                                 }
                             }
                         }
+                    }
                 }
                 catch (Exception ex)
                 {
