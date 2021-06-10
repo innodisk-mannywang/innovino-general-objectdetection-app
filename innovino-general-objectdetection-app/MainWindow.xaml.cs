@@ -151,19 +151,14 @@ namespace innovino_general_objectdetection_app
 
         private void Bk_offline_source_DoWork(object sender, DoWorkEventArgs e)
         {
-            //throw new NotImplementedException();
-
-            OutputDebugString("offline " + last_image);
             while (bLock)
             {
                 m_bStopIdentify = true;
-                OutputDebugString("bLock!!!");
             }
 
             while (!bk_online_source.CancellationPending)
             {
                 bk_online_source.CancelAsync();
-                OutputDebugString("bk_online_source.CancellationPending!!!");
             }
 
             start = GetTickCount();
@@ -196,7 +191,7 @@ namespace innovino_general_objectdetection_app
             last_result.Clear();
 
             ObjectDatas output = new ObjectDatas();
-            int nResult = IVINO_Inference(serviceid, ref data, ref output, false);            
+            int nResult = IVINO_Inference(serviceid, ref data, ref output, false);
             if (nResult > 0)
             {
                 end = GetTickCount();
@@ -209,11 +204,6 @@ namespace innovino_general_objectdetection_app
 
                 foreach (ObjectData obj in last_result)
                 {
-                    if (obj.label == 0)
-                    {
-                        continue;
-                    }
-
                     if (obj.conf < infer_conf_threshold)
                     {
                         continue;
@@ -247,7 +237,6 @@ namespace innovino_general_objectdetection_app
 
         private void Bk_online_source_DoWork(object sender, DoWorkEventArgs e)
         {
-            start = GetTickCount();
             bool bTimeout = false;
             while (!bTimeout && !objVideoCapture.IsOpened())
             {
@@ -310,11 +299,6 @@ namespace innovino_general_objectdetection_app
 
                                         foreach (ObjectData obj in last_result)
                                         {
-                                            if (obj.label == 0)
-                                            {
-                                                continue;
-                                            }
-
                                             if (obj.conf < infer_conf_threshold)
                                             {
                                                 continue;
@@ -380,11 +364,38 @@ namespace innovino_general_objectdetection_app
 
         private void init_model_combobox()
         {
+            model_name.Add("Custom-Vision-Logo");
+            model_path.Add(Directory.GetCurrentDirectory() + "\\logo");
+
+            model_name.Add("Custom-Vision-Mask");
+            model_path.Add(Directory.GetCurrentDirectory() + "\\mask");
+
+            model_name.Add("Custom-Vision-Label");
+            model_path.Add(Directory.GetCurrentDirectory() + "\\label");
+
+            model_name.Add("face-detection-0100");
+            model_path.Add(Directory.GetCurrentDirectory().Substring(0, Directory.GetCurrentDirectory().LastIndexOf(@"\")) + "\\Pretrain-models\\intel\\face-detection-0100\\FP16\\face-detection-0100");
+
             model_name.Add("face-detection-0102");
             model_path.Add(Directory.GetCurrentDirectory().Substring(0, Directory.GetCurrentDirectory().LastIndexOf(@"\")) + "\\Pretrain-models\\intel\\face-detection-0102\\FP16\\face-detection-0102");
 
-            model_name.Add("person-attributes-recognition-crossroad-0230");
-            model_path.Add(Directory.GetCurrentDirectory().Substring(0, Directory.GetCurrentDirectory().LastIndexOf(@"\")) + "\\Pretrain-models\\intel\\person-attributes-recognition-crossroad-0230\\FP16\\person-attributes-recognition-crossroad-0230");
+            model_name.Add("face-detection-0104");
+            model_path.Add(Directory.GetCurrentDirectory().Substring(0, Directory.GetCurrentDirectory().LastIndexOf(@"\")) + "\\Pretrain-models\\intel\\face-detection-0104\\FP16\\face-detection-0104");
+
+            model_name.Add("face-detection-adas-0001");
+            model_path.Add(Directory.GetCurrentDirectory().Substring(0, Directory.GetCurrentDirectory().LastIndexOf(@"\")) + "\\Pretrain-models\\intel\\face-detection-adas-0001\\FP16\\face-detection-adas-0001");
+
+            model_name.Add("face-detection-adas-binary-0001");
+            model_path.Add(Directory.GetCurrentDirectory().Substring(0, Directory.GetCurrentDirectory().LastIndexOf(@"\")) + "\\Pretrain-models\\intel\\face-detection-adas-binary-0001\\FP32-INT1\\face-detection-adas-binary-0001");
+
+            model_name.Add("face-detection-retail-0004");
+            model_path.Add(Directory.GetCurrentDirectory().Substring(0, Directory.GetCurrentDirectory().LastIndexOf(@"\")) + "\\Pretrain-models\\intel\\face-detection-retail-0004\\FP16\\face-detection-retail-0004");
+
+            model_name.Add("face-detection-retail-0005");
+            model_path.Add(Directory.GetCurrentDirectory().Substring(0, Directory.GetCurrentDirectory().LastIndexOf(@"\")) + "\\Pretrain-models\\intel\\face-detection-retail-0005\\FP16\\face-detection-retail-0005");
+
+            model_name.Add("face-detection-0102");
+            model_path.Add(Directory.GetCurrentDirectory().Substring(0, Directory.GetCurrentDirectory().LastIndexOf(@"\")) + "\\Pretrain-models\\intel\\face-detection-0102\\FP16\\face-detection-0102");
 
             foreach (string model in model_name)
             {
